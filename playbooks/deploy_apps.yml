@@ -1,0 +1,70 @@
+---
+- hosts: vps
+  gather_facts: false
+
+  vars:
+    ref_main: "main"
+    dolibarr_businessboost_repo: "git@github.com:boloudes/dolibarr_businessboost.git"
+    dolibarr_cybermedia_repo:    "git@github.com:boloudes/dolibarr_groupecyber.git"
+    dolibarr_demo_repo:          "git@github.com:boloudes/dolibarr_demo.git"
+    moodle_repo:                 "git@github.com:boloudes/moodle_code.git"
+    fb_repo:                     "git@github.com:boloudes/fb-dashboard.git"
+
+  tasks:
+  - name: Déployer Dolibarr BusinessBoost
+    include_role:
+      name: deploy_php_app
+    vars:
+      app_name: "dolibarr_businessboost"
+      app_repo_url: "{{ dolibarr_businessboost_repo }}"
+      app_tag: "{{ ref_main }}"
+      check_url: "https://dlb.businessboost.nc/"
+
+  - name: Déployer Dolibarr Cybermedia
+    include_role:
+      name: deploy_php_app
+    vars:
+      app_name: "dolibarr_groupecyber"
+      app_repo_url: "{{ dolibarr_cybermedia_repo }}"
+      app_tag: "{{ ref_main }}"
+      check_url: "https://dlb.cybermedia.nc/"
+
+  - name: Déployer Dolibarr Demo
+    include_role:
+      name: deploy_php_app
+    vars:
+      app_name: "dolibarr_demo"
+      app_repo_url: "{{ dolibarr_demo_repo }}"
+      app_tag: "{{ ref_main }}"
+      check_url: "https://dlb-demo.businessboost.nc/"
+
+#SKIP   - name: Déployer Moodle
+#SKIP     include_role:
+#SKIP       name: deploy_php_app
+#SKIP     vars:
+#SKIP       app_name: "moodle"
+#SKIP       app_repo_url: "{{ moodle_repo }}"
+#SKIP       app_tag: "{{ ref_main }}"
+      check_url: "https://moodle.smartwin.ai/"
+
+  - name: Déployer fb-dashboard
+    include_role:
+      name: deploy_php_app
+    vars:
+      app_name: "fb-dashboard"
+      app_repo_url: "{{ fb_repo }}"
+      app_tag: "{{ ref_main }}"
+      check_url: "https://fb.businessboost.nc/"
+
+  - name: Déployer n8n (docker compose)
+    include_role:
+      name: deploy_docker_compose
+    vars:
+      compose_dir: "/var/www/n8n"
+      check_url: "http://127.0.0.1:5678/"
+
+- name: Déployer configuration Nginx (depuis Git)
+  hosts: vps
+  gather_facts: false
+  roles:
+    - { role: nginx_config, tags: ['nginx'] }

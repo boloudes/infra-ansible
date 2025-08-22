@@ -1,0 +1,133 @@
+---
+- name: Générer l'identifiant de release
+  set_fact:
+    release_id: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+
+- name: Variables runtime
+  set_fact:
+    app_base: "/var/www/{{ app_name }}"
+    releases_dir: "/var/www/{{ app_name }}/releases"
+    new_release: "/var/www/{{ app_name }}/releases/{{ release_id }}"
+    current_link: "/var/www/{{ app_name }}/current"
+
+- name: Créer arborescence releases + data
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0750"
+  loop:
+    - "{{ releases_dir }}"
+    - "/var/www/{{ app_name }}/data"
+  become: true
+
+- name: Cloner la release depuis Git (branche/tag)
+  command: >
+    git clone --branch {{ app_tag }} --depth 1 {{ app_repo_url }} {{ new_release }}
+  args:
+    creates: "{{ new_release }}"
+  become: true
+
+- name: Droits sur la release
+  file:
+    path: "{{ new_release }}"
+    owner: www-data
+    group: www-data
+    recurse: yes
+  become: true
+
+# --- PRÉSERVATION DOLIBARR (si applicable) ---
+- name: Vérifier conf.php courant (Dolibarr)
+  stat:
+    path: "{{ current_link }}/htdocs/conf/conf.php"
+  register: cur_conf
+  become: true
+
+- name: Créer dossier conf dans la nouvelle release
+  when: cur_conf.stat.exists | default(false)
+  file:
+    path: "{{ new_release }}/htdocs/conf"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0750"
+  become: true
+
+- name: Copier conf.php courant vers nouvelle release
+  when: cur_conf.stat.exists | default(false)
+  copy:
+    src: "{{ current_link }}/htdocs/conf/conf.php"
+    dest: "{{ new_release }}/htdocs/conf/conf.php"
+    owner: www-data
+    group: www-data
+    mode: "0640"
+    remote_src: true
+  become: true
+
+- name: Vérifier dossier custom courant (Dolibarr)
+  stat:
+    path: "{{ current_link }}/htdocs/custom"
+  register: cur_custom
+  become: true
+
+- name: Copier custom vers la nouvelle release (préserve modules)
+  when: cur_custom.stat.isdir | default(false)
+  shell: "rsync -a --delete '{{ current_link }}/htdocs/custom/' '{{ new_release }}/htdocs/custom/'"
+  args:
+    warn: false
+  become: true
+# --- FIN PRÉSERVATION ---
+
+- name: Mémoriser l'ancienne cible du symlink (si existe)
+  stat:
+    path: "{{ current_link }}"
+  register: current_stat
+
+- name: Enregistrer ancienne release
+  set_fact:
+    previous_release: "{{ current_stat.stat.lnk_source | default('') }}"
+
+- block:
+    - name: Bascule symlink "current" vers la nouvelle release
+      file:
+        src: "{{ new_release }}"
+        dest: "{{ current_link }}"
+        state: link
+        force: true
+      become: true
+
+    - name: Recharger Nginx et PHP-FPM
+      shell: |
+        nginx -t && systemctl reload nginx
+        systemctl restart php8.2-fpm
+      args:
+        warn: false
+      become: true
+
+    - name: Post-check HTTP
+      shell: "curl -kfsS --max-time 10 {{ check_url }} > /dev/null"
+      register: curl_check
+      changed_when: false
+
+  rescue:
+    - name: Rollback symlink sur l'ancienne release (si connue)
+      when: previous_release != ''
+      file:
+        src: "{{ previous_release }}"
+        dest: "{{ current_link }}"
+        state: link
+        force: true
+      become: true
+
+    - name: Reload services après rollback
+      shell: |
+        nginx -t && systemctl reload nginx
+        systemctl restart php8.2-fpm
+      args:
+        warn: false
+      become: true
+
+    - name: Échec explicite
+      fail:
+        msg: "Déploiement {{ app_name }} échoué, rollback effectué."

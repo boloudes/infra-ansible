@@ -1,0 +1,170 @@
+---
+- name: Générer l'identifiant de release
+  set_fact:
+    release_id: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+
+- name: Variables runtime
+  set_fact:
+    app_base: "/var/www/{{ app_name }}"
+    releases_dir: "/var/www/{{ app_name }}/releases"
+    new_release: "/var/www/{{ app_name }}/releases/{{ release_id }}"
+    current_link: "/var/www/{{ app_name }}/current"
+
+- name: Créer arborescence releases + data
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0750"
+  loop:
+    - "{{ releases_dir }}"
+    - "/var/www/{{ app_name }}/data"
+  become: true
+
+- name: Cloner la release depuis Git (branche/tag)
+  command: >
+    git clone --branch {{ app_tag }} --depth 1 {{ app_repo_url }} {{ new_release }}
+  args:
+    creates: "{{ new_release }}"
+  become: true
+
+- name: Droits sur la nouvelle release
+  file:
+    path: "{{ new_release }}"
+    owner: www-data
+    group: www-data
+    recurse: yes
+  become: true
+
+# == 2.2.1 CURRENT CONF/CUSTOM ==
+- name: Vérifier conf.php courant (Dolibarr)
+  stat:
+    path: "{{ current_link }}/htdocs/conf/conf.php"
+  register: cur_conf
+  become: true
+
+- name: Créer dossier conf dans la nouvelle release
+  when: cur_conf.stat.exists | default(false)
+  file:
+    path: "{{ new_release }}/htdocs/conf"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0750"
+  become: true
+
+- name: Copier conf.php courant -> nouvelle release
+  when: cur_conf.stat.exists | default(false)
+  copy:
+    src: "{{ current_link }}/htdocs/conf/conf.php"
+    dest: "{{ new_release }}/htdocs/conf/conf.php"
+    owner: www-data
+    group: www-data
+    mode: "0640"
+    remote_src: true
+  become: true
+
+- name: Vérifier dossier custom courant (Dolibarr)
+  stat:
+    path: "{{ current_link }}/htdocs/custom"
+  register: cur_custom
+  become: true
+
+- name: Copier custom courant -> nouvelle release
+  when: cur_custom.stat.isdir | default(false)
+  shell: "rsync -a --delete '{{ current_link }}/htdocs/custom/' '{{ new_release }}/htdocs/custom/'"
+  args:
+    chdir: "{{ app_base }}"
+  become: true
+
+# == 2.2.2 LEGACY FALLBACK ==
+- name: Vérifier conf.php legacy (Dolibarr)
+  stat:
+    path: "/var/www/{{ app_name }}/htdocs/conf/conf.php"
+  register: legacy_conf
+  become: true
+
+- name: Copier conf.php legacy -> nouvelle release (si courant absent)
+  when: (not cur_conf.stat.exists | default(false)) and (legacy_conf.stat.exists | default(false))
+  copy:
+    src: "/var/www/{{ app_name }}/htdocs/conf/conf.php"
+    dest: "{{ new_release }}/htdocs/conf/conf.php"
+    owner: www-data
+    group: www-data
+    mode: "0640"
+    remote_src: true
+  become: true
+
+- name: Vérifier custom legacy (Dolibarr)
+  stat:
+    path: "/var/www/{{ app_name }}/htdocs/custom"
+  register: legacy_custom
+  become: true
+
+- name: Copier custom legacy -> nouvelle release (si courant absent)
+  when: (not cur_custom.stat.isdir | default(false)) and (legacy_custom.stat.isdir | default(false))
+  shell: "rsync -a --delete '/var/www/{{ app_name }}/htdocs/custom/' '{{ new_release }}/htdocs/custom/'"
+  args:
+    chdir: "{{ app_base }}"
+  become: true
+
+- name: Injecter config.php (Moodle)
+  when: app_name == 'moodle' and lookup('ansible.builtin.fileglob', '/var/www/moodle/config.php', errors='ignore') != ''
+  copy:
+    src: "/var/www/moodle/config.php"
+    dest: "{{ new_release }}/config.php"
+    owner: www-data
+    group: www-data
+    mode: "0640"
+    remote_src: true
+  become: true
+
+- name: Détecter présence de htdocs/ dans la nouvelle release
+  stat:
+    path: "{{ new_release }}/htdocs/index.php"
+  register: new_has_htdocs
+  become: true
+
+- name: Détecter index.php à la racine de la nouvelle release
+  stat:
+    path: "{{ new_release }}/index.php"
+  register: new_root_index
+  become: true
+
+- name: Basculer docroot -> .../current si htdocs absent mais index à la racine (Dolibarr)
+  when: (not new_has_htdocs.stat.exists | default(false)) and (new_root_index.stat.exists | default(false)) and (app_name is match('^dolibarr_'))
+  lineinfile:
+    path: "/etc/nginx/sites-available/{{ 'dlb.businessboost.nc.conf' if app_name == 'dolibarr_businessboost' else ('dlb.cybermedia.nc.conf' if app_name == 'dolibarr_groupecyber' else 'dlb-demo.businessboost.nc.conf') }}"
+    regexp: '^\s*root\s+.*current/htdocs'
+    line: '    root /var/www/{{ app_name }}/current;'
+    backrefs: no
+  notify: reload nginx
+  become: true
+
+# SANITY CHECK release (Dolibarr/Moodle) avant bascule
+- name: Sanity check Dolibarr (htdocs/index.php) ou index à la racine
+  when: app_name is match('^dolibarr_')
+  fail:
+    msg: "Nouvelle release {{ new_release }} invalide: ni {{ new_release }}/htdocs/index.php ni {{ new_release }}/index.php"
+  when: not ( (lookup('ansible.builtin.fileglob', new_release + '/htdocs/index.php', errors='ignore') != '') or
+              (lookup('ansible.builtin.fileglob', new_release + '/index.php', errors='ignore') != '') )
+
+- name: Sanity check Moodle (config.php sera injecté)
+  when: app_name == 'moodle'
+  stat:
+    path: "{{ new_release }}/index.php"
+  register: mood_root
+  failed_when: not mood_root.stat.exists
+
+- name: Valider previous_release (doit exister sur le FS)
+  stat:
+    path: "{{ previous_release }}"
+  register: prev_stat
+  when: (previous_release | default("")) | length > 0
+  become: true
+
+- name: Annuler previous_release si invalide
+  set_fact:
+    previous_release: ""
+  when: (previous_release | default("")) | length > 0 and (not prev_stat.stat.exists | default(false))

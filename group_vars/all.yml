@@ -1,0 +1,16 @@
+# --- Nginx config repo ---
+nginx_config_repo: "git@github.com:boloudes/vps-nginx-config.git"
+nginx_config_ref: "main"
+nginx_enabled_sites:
+  - dlb.businessboost.nc.conf
+  - dlb-demo.businessboost.nc.conf
+  - dlb.cybermedia.nc.conf
+  - moodle.conf
+  - fb.businessboost.nc-ssl.conf
+
+# --- Dolibarr modules repo (pour plus tard) ---
+dolibarr_modules_repo: "git@github.com:boloudes/dolibarr-modules.git"
+dolibarr_modules_ref: "main"
+dolibarr_businessboost_custom_modules: [dbadmin, diconc, ecotaxdeee, multicompany]
+dolibarr_groupecyber_custom_modules:  [dbadmin, diconc]
+dolibarr_demo_custom_modules:         []

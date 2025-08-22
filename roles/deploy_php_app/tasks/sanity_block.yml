@@ -1,0 +1,35 @@
+# SANITY CHECK (fixed)
+- name: Check Dolibarr new_release htdocs/index.php
+  when: app_name is match('^dolibarr_')
+  stat:
+    path: "{{ new_release }}/htdocs/index.php"
+  register: dol_has_htdocs
+  become: true
+
+- name: Check Dolibarr new_release index.php at root
+  when: app_name is match('^dolibarr_')
+  stat:
+    path: "{{ new_release }}/index.php"
+  register: dol_has_root
+  become: true
+
+- name: Fail if Dolibarr release missing entrypoint
+  when:
+    - app_name is match('^dolibarr_')
+    - not (dol_has_htdocs.stat.exists | default(false) or dol_has_root.stat.exists | default(false))
+  fail:
+    msg: "Nouvelle release {{ new_release }} invalide (pas d'index.php ni dans htdocs/ ni à la racine)."
+
+- name: Check Moodle new_release index.php
+  when: app_name == 'moodle'
+  stat:
+    path: "{{ new_release }}/index.php"
+  register: mood_root
+  become: true
+
+- name: Fail if Moodle release missing index.php
+  when:
+    - app_name == 'moodle'
+    - not mood_root.stat.exists | default(false)
+  fail:
+    msg: "Nouvelle release {{ new_release }} invalide pour Moodle (index.php manquant)."

@@ -1,0 +1,46 @@
+---
+- name: Cloner le repo Nginx
+  ansible.builtin.git:
+    repo: "{{ nginx_config_repo }}"
+    version: "{{ nginx_config_ref }}"
+    dest: /opt/nginx-config
+    force: true
+    accept_hostkey: true
+  become: true
+  tags: [nginx]
+
+- name: Déployer vhosts sélectionnés dans sites-available
+  ansible.builtin.copy:
+    src: "/opt/nginx-config/sites-available/{{ item }}"
+    dest: "/etc/nginx/sites-available/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ nginx_enabled_sites }}"
+  become: true
+  tags: [nginx]
+
+- name: Activer vhosts (symlinks dans sites-enabled)
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ item }}"
+    dest: "/etc/nginx/sites-enabled/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ nginx_enabled_sites }}"
+  become: true
+  tags: [nginx]
+
+- name: Test de config Nginx
+  ansible.builtin.command: nginx -t
+  register: nginx_test
+  changed_when: false
+  become: true
+  tags: [nginx]
+
+- name: Reload Nginx si test OK
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  when: nginx_test.rc == 0
+  become: true
+  tags: [nginx]

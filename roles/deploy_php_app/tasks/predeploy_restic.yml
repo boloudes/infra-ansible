@@ -1,0 +1,49 @@
+---
+# Résoudre le symlink current -> cible réelle
+- name: Résoudre current vers sa cible (realpath)
+  shell: "readlink -f '{{ current_link }}' || true"
+  register: cur_target_cmd
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Mémoriser la cible actuelle
+  set_fact:
+    cur_target: "{{ cur_target_cmd.stdout | trim }}"
+
+# Si pas de cible, on saute le snapshot (premier déploiement)
+- name: Vérifier existence cible
+  stat:
+    path: "{{ cur_target }}"
+  register: cur_stat
+  when: cur_target | length > 0
+  become: true
+
+# Récupérer commit HEAD si repository git
+- name: HEAD court si repo Git
+  shell: "git -C '{{ cur_target }}' rev-parse --short HEAD"
+  register: cur_commit
+  changed_when: false
+  failed_when: false
+  when:
+    - cur_target | length > 0
+    - cur_stat.stat.isdir | default(false)
+  become: true
+
+# Snapshot restic (tags: predeploy, app, commit si dispo)
+- name: Snapshot restic de la release courante
+  shell: |
+    bash -lc '
+      source /root/.restic-env
+      TAGS="--tag predeploy --tag app={{ app_name }}"
+      if [ -n "{{ cur_commit.stdout | default("") | trim }}" ]; then
+        TAGS="$TAGS --tag commit={{ cur_commit.stdout | trim }}"
+      fi
+      restic backup "{{ cur_target }}" $TAGS --host "$(hostname --fqdn || hostname)"
+    '
+  when:
+    - cur_target | length > 0
+    - cur_stat.stat.isdir | default(false)
+  changed_when: true
+  failed_when: false
+  become: true

@@ -1,0 +1,46 @@
+---
+- name: Chercher un fichier compose dans {{ compose_dir }}
+  shell: |
+    set -e
+    for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+      if [ -f "{{ compose_dir }}/$f" ]; then echo "{{ compose_dir }}/$f"; exit 0; fi
+    done
+    exit 1
+  register: compose_file
+  changed_when: false
+  failed_when: false
+
+- name: Info - aucun fichier compose trouvé, on saute la tâche n8n
+  debug:
+    msg: "Aucun docker-compose.* trouvé dans {{ compose_dir }} — tâche n8n ignorée."
+  when: compose_file.rc != 0
+
+- name: Pull des images
+  shell: "docker compose -f {{ compose_file.stdout }} pull"
+  when: compose_file.rc == 0
+  args:
+    chdir: "{{ compose_dir }}"
+  become: true
+
+- name: Up -d
+  shell: "docker compose -f {{ compose_file.stdout }} up -d"
+  when: compose_file.rc == 0
+  args:
+    chdir: "{{ compose_dir }}"
+  become: true
+
+# Healthcheck robuste: essaie HTTP puis HTTPS, plusieurs tentatives
+- name: Post-check HTTP/HTTPS (10 tentatives max)
+  when: compose_file.rc == 0
+  shell: |
+    set -e
+    for i in $(seq 1 10); do
+      if curl -fsS --max-time 3 http://127.0.0.1:5678/ >/dev/null 2>&1; then exit 0; fi
+      if curl -fsSk --max-time 3 https://127.0.0.1:5678/ >/dev/null 2>&1; then exit 0; fi
+      sleep 2
+    done
+    echo "Healthcheck n8n KO après 10 tentatives" >&2
+    exit 1
+  register: curl_check
+  changed_when: false
+  become: true

@@ -1,0 +1,7 @@
+*.retry
+*.log
+*.swp
+*.swo
+.env
+**/*-secrets*.yml
+**/*.vault.yml
