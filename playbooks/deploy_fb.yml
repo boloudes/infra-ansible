@@ -18,4 +18,5 @@
 - hosts: vps
   gather_facts: false
   roles:
-    - nginx_config
+--skip-tags nginx
+
