@@ -1,7 +1,6 @@
 ---
 - hosts: vps
   gather_facts: false
-
   vars:
     ref_main: "main"
     fb_repo:  "git@github.com:boloudes/fb-dashboard.git"
@@ -11,7 +10,12 @@
       include_role:
         name: deploy_php_app
       vars:
-        app_name:   "fb-dashboard"
+        app_name: "fb-dashboard"
         app_repo_url: "{{ fb_repo }}"
-        app_tag:      "{{ ref_main }}"
-        check_url:    "https://fb.businessboost.nc/"
+        app_tag: "{{ ref_main }}"
+        check_url: "https://fb.businessboost.nc/"
+
+- hosts: vps
+  gather_facts: false
+  roles:
+    - nginx_config
