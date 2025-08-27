@@ -38,6 +38,20 @@
     recurse: yes
   become: true
 
+- name: Supprimer tout app.js obsolète à la racine du projet (fb-dashboard)
+  file:
+    path: "/var/www/{{ app_name }}/app.js"
+    state: absent
+  when: app_name == 'fb-dashboard'
+  become: true
+
+- name: Nettoyer un éventuel lien 'current' parasite dans la release
+  file:
+    path: "{{ new_release }}/current"
+    state: absent
+  become: true
+
+
 # == 2.2.1 CURRENT CONF/CUSTOM ==
 - name: Vérifier conf.php courant (Dolibarr)
   stat:
