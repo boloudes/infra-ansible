@@ -1,46 +1,71 @@
 ---
-- name: Cloner le repo Nginx
-  ansible.builtin.git:
-    repo: "{{ nginx_config_repo }}"
-    version: "{{ nginx_config_ref }}"
-    dest: /opt/nginx-config
-    force: true
-    accept_hostkey: true
+# Clone the Nginx config repo onto the target host, then deploy selected vhosts.
+
+- name: Ensure working dir exists
   become: true
-  tags: [nginx]
+  file:
+    path: /opt/nginx-config
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Cloner le repo Nginx
+  become: true
+  git:
+    repo: "{{ nginx_config_repo }}"
+    version: "{{ nginx_config_ref | default('main') }}"
+    dest: /opt/nginx-config
+    accept_hostkey: true
+    force: true
+    update: true
 
 - name: Déployer vhosts sélectionnés dans sites-available
-  ansible.builtin.copy:
+  become: true
+  copy:
     src: "/opt/nginx-config/sites-available/{{ item }}"
     dest: "/etc/nginx/sites-available/{{ item }}"
     owner: root
     group: root
     mode: "0644"
+    backup: true
+    remote_src: true          # <<< IMPORTANT: les fichiers sont sur la machine distante
   loop: "{{ nginx_enabled_sites }}"
-  become: true
-  tags: [nginx]
 
-- name: Activer vhosts (symlinks dans sites-enabled)
-  ansible.builtin.file:
+- name: Activer les vhosts (symlinks dans sites-enabled)
+  become: true
+  file:
     src: "/etc/nginx/sites-available/{{ item }}"
     dest: "/etc/nginx/sites-enabled/{{ item }}"
     state: link
     force: true
   loop: "{{ nginx_enabled_sites }}"
-  become: true
-  tags: [nginx]
 
-- name: Test de config Nginx
-  ansible.builtin.command: nginx -t
+# Optionnel: retirer des symlinks obsolètes non listés dans nginx_enabled_sites
+- name: Lister les symlinks actuels
+  become: true
+  find:
+    paths: /etc/nginx/sites-enabled
+    file_type: link
+  register: se_links
+
+- name: Désactiver les vhosts non listés
+  become: true
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ se_links.files }}"
+  when: (item.path | basename) not in nginx_enabled_sites
+
+- name: Test nginx config
+  become: true
+  command: nginx -t
   register: nginx_test
   changed_when: false
-  become: true
-  tags: [nginx]
 
-- name: Reload Nginx si test OK
-  ansible.builtin.service:
+- name: Reload nginx si OK
+  become: true
+  systemd:
     name: nginx
     state: reloaded
   when: nginx_test.rc == 0
-  become: true
-  tags: [nginx]
