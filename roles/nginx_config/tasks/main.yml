@@ -57,6 +57,15 @@
   loop: "{{ se_links.files }}"
   when: (item.path | basename) not in nginx_enabled_sites
 
+- name: Désactiver default_server sur 443 s’il existe
+  become: true
+  replace:
+    path: "{{ item }}"
+    regexp: '(listen\s+443[^;]*)\s+default_server;'
+    replace: '\1;'
+  loop: "{{ lookup('ansible.builtin.fileglob','/etc/nginx/sites-available/*.conf', wantlist=True) }}"
+  when: item is file
+
 - name: Test nginx config
   become: true
   command: nginx -t
