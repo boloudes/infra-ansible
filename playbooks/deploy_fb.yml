@@ -1,22 +1,23 @@
 ---
-- hosts: vps
+- name: Déployer fb-dashboard
+  hosts: vps
+  become: true
   gather_facts: false
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  # Ces 3 variables existent déjà chez toi ; ajuste si besoin
   vars:
-    ref_main: "main"
-    fb_repo:  "git@github.com:boloudes/fb-dashboard.git"
+    app_name: fb-dashboard
+    app_repo_url: "git@github.com:boloudes/fb-dashboard.git"
+    app_tag: "main"
 
-  tasks:
-    - name: Déployer fb-dashboard
-      include_role:
-        name: deploy_php_app
-      vars:
-        app_name: "fb-dashboard"
-        app_repo_url: "{{ fb_repo }}"
-        app_tag: "{{ ref_main }}"
-        check_url: "https://fb.businessboost.nc/"
-
-- hosts: vps
-  gather_facts: false
   roles:
---skip-tags nginx
+    - role: deploy_php_app
+      tags: [app, deploy]
 
+    # Laisse-le si tu veux pouvoir déployer Nginx dans le même run.
+    # On peut le désactiver au besoin avec:  --skip-tags nginx
+    - role: nginx_config
+      tags: [nginx]
