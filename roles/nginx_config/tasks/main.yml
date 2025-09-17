@@ -86,3 +86,24 @@
     name: nginx
     state: reloaded
   when: nginx_test.rc == 0
+
+- name: Deploy restler fastcgi snippet
+  copy:
+    src: files/fastcgi-php-restler.conf
+    dest: /etc/nginx/snippets/fastcgi-php-restler.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Ensure dlb vhosts include restler snippet (idempotent)
+  replace:
+    path: "/etc/nginx/sites-enabled/{{ item }}"
+    regexp: '(^\s*location\s+~\s+\\\.php\$\s*\{(?![\s\S]*fastcgi-php-restler\.conf))'
+    replace: '\1\n        include snippets/fastcgi-php-restler.conf;'
+  with_items:
+    - dlb-demo.businessboost.nc.conf
+    - dlb.businessboost.nc.conf
+    - dlb.cybermedia.nc.conf
+  notify: reload nginx
+
