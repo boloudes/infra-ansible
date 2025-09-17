@@ -1,21 +1,5 @@
 ---
-- name: Déployer snippet Restler pour PHP-FPM
-  ansible.builtin.copy:
-    src: fastcgi-php-restler.conf
-    dest: /etc/nginx/snippets/fastcgi-php-restler.conf
-    owner: root
-    group: root
-    mode: "0644"
-  notify: reload nginx
-
-# Optionnel : si tu synchronises aussi les vhosts depuis ce rôle, laisse tes tâches existantes ici.
-# IMPORTANT : après copie des vhosts, on teste, puis reload via handler uniquement si tout est OK.
-
-- name: Tester la config Nginx
-  ansible.builtin.command: nginx -t
-  register: nginx_test
-  changed_when: false
-  failed_when: nginx_test.rc != 0
-
-- name: Appliquer le reload si nécessaire
-  ansible.builtin.meta: flush_handlers
+- name: reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
