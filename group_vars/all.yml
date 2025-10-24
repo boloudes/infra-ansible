@@ -6,6 +6,7 @@ nginx_enabled_sites:
   - dlb-demo.businessboost.nc.conf
   - dlb.cybermedia.nc.conf
   - moodle.conf
+  - n8n.smartwin.ai.conf
   - fb.businessboost.nc-ssl.conf
 
 # --- Dolibarr modules repo (pour plus tard) ---
