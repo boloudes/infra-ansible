@@ -73,7 +73,6 @@
     replace: '\1;'
   loop: "{{ nginx_vhosts.files }}"
 
-
 - name: Test nginx config
   become: true
   command: nginx -t
@@ -107,3 +106,60 @@
     - dlb.cybermedia.nc.conf
   notify: reload nginx
 
+
+# -------------------------------------------------------------------------
+# 🔒 Ajout : Supervision Certbot / Monit (auto-renouvellement SSL)
+# -------------------------------------------------------------------------
+
+- name: Déployer script de check Certbot
+  become: true
+  copy:
+    content: |
+      #!/bin/bash
+      LOGFILE="/var/log/letsencrypt/monit-certbot-check.log"
+      DATE=$(date '+%Y-%m-%d %H:%M:%S')
+
+      certbot renew --dry-run --quiet
+      STATUS=$?
+
+      if [ $STATUS -ne 0 ]; then
+        echo "[$DATE] ❌ Échec certbot renew --dry-run (code $STATUS)" >> "$LOGFILE"
+        exit 1
+      fi
+
+      EXPIRING=$(certbot certificates 2>/dev/null | grep -B2 "INVALID\\|EXPIRED\\|VALID: [0-9]\\{1,2\\} day" | grep "Certificate Name" || true)
+      if [ -n "$EXPIRING" ]; then
+        echo "[$DATE] ⚠️ Certificat proche expiration : $EXPIRING" >> "$LOGFILE"
+        exit 2
+      fi
+
+      echo "[$DATE] ✅ Certbot OK - tous certificats valides" >> "$LOGFILE"
+      exit 0
+    dest: /usr/local/bin/certbot-renew-check.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Déployer check Monit certbot-renew
+  become: true
+  copy:
+    content: |
+      CHECK PROGRAM certbot-renew WITH PATH "/usr/local/bin/certbot-renew-check.sh"
+        IF STATUS != 0 THEN EXEC "/usr/local/bin/monit_webhook.sh 'Certbot renew failed on $(hostname)'"
+        EVERY 2 CYCLES
+    dest: /etc/monit/conf-enabled/certbot-renew
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Recharger Monit
+  become: true
+  command: monit reload
+  changed_when: false
+
+- name: Vérifier syntaxe Monit
+  become: true
+  command: monit -t
+  register: monit_check
+  changed_when: false
+  failed_when: monit_check.rc != 0
