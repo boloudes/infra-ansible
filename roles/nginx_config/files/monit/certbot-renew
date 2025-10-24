@@ -1,0 +1,3 @@
+CHECK PROGRAM certbot-renew WITH PATH "/usr/local/bin/certbot-renew-check.sh"
+  IF STATUS != 0 THEN EXEC "/usr/local/bin/monit_webhook.sh 'Certbot renew failed on $(hostname)'"
+  EVERY 2 CYCLES
