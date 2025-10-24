@@ -1,0 +1,7 @@
+---
+- hosts: vps
+  become: true
+  roles:
+    - role: deploy_docker_compose
+      vars:
+        compose_dir: /var/www/n8n
